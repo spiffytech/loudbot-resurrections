@@ -1,0 +1,12 @@
+# dependencies
+node_modules
+
+# runtime data (sqlite + WAL sidecars)
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# dotenv
+.env
+.env.*.local
