@@ -59,23 +59,53 @@ describe('quotes', () => {
 	test('quote dedupes per-guild, not globally', () => {
 		const db = freshStore();
 		// Same quote in the SAME guild dedupes.
-		db.insert({ message_id: 'm1', quote: 'SAME QUOTE', said: 'a', channel_id: 'c1', guild_id: 'g1' });
-		const sameGuildDup = db.insert({ message_id: 'm2', quote: 'SAME QUOTE', said: 'b', channel_id: 'c1', guild_id: 'g1' });
+		db.insert({
+			message_id: 'm1',
+			quote: 'SAME QUOTE',
+			said: 'a',
+			channel_id: 'c1',
+			guild_id: 'g1',
+		});
+		const sameGuildDup = db.insert({
+			message_id: 'm2',
+			quote: 'SAME QUOTE',
+			said: 'b',
+			channel_id: 'c1',
+			guild_id: 'g1',
+		});
 		expect(sameGuildDup).toBeNull();
 		expect(db.total()).toBe(1);
 		// Same quote in a DIFFERENT guild is allowed (per-guild isolation).
-		const otherGuild = db.insert({ message_id: 'm3', quote: 'SAME QUOTE', said: 'c', channel_id: 'c2', guild_id: 'g2' });
+		const otherGuild = db.insert({
+			message_id: 'm3',
+			quote: 'SAME QUOTE',
+			said: 'c',
+			channel_id: 'c2',
+			guild_id: 'g2',
+		});
 		expect(otherGuild).not.toBeNull();
 		expect(db.total()).toBe(2);
 		// Same quote with NULL guild dedupes against NULL guild only.
-		const nullGuild = db.insert({ message_id: 'm4', quote: 'SAME QUOTE', said: 'd', channel_id: 'c3', guild_id: null });
+		const nullGuild = db.insert({
+			message_id: 'm4',
+			quote: 'SAME QUOTE',
+			said: 'd',
+			channel_id: 'c3',
+			guild_id: null,
+		});
 		expect(nullGuild).not.toBeNull();
 		expect(db.total()).toBe(3);
 	});
 
 	test('findByMessageId and deleteByMessageId round-trip', () => {
 		const db = freshStore();
-		db.insert({ message_id: 'm9', quote: 'LOUD REMOVABLE THING', said: 'x', channel_id: 'c2', guild_id: null });
+		db.insert({
+			message_id: 'm9',
+			quote: 'LOUD REMOVABLE THING',
+			said: 'x',
+			channel_id: 'c2',
+			guild_id: null,
+		});
 		expect(db.findByMessageId('m9')).not.toBeNull();
 		expect(db.deleteByMessageId('m9')).toBe(true);
 		expect(db.findByMessageId('m9')).toBeNull();
@@ -84,7 +114,13 @@ describe('quotes', () => {
 
 	test('updateQuote changes text', () => {
 		const db = freshStore();
-		db.insert({ message_id: 'm4', quote: 'OLD LOUD TEXT', said: 'x', channel_id: 'c3', guild_id: null });
+		db.insert({
+			message_id: 'm4',
+			quote: 'OLD LOUD TEXT',
+			said: 'x',
+			channel_id: 'c3',
+			guild_id: null,
+		});
 		const ok = db.updateQuote('m4', 'NEW LOUD TEXT', '2026-01-01T00:00:00Z');
 		expect(ok).toBe(true);
 		const row = db.findByMessageId('m4');
@@ -95,9 +131,27 @@ describe('quotes', () => {
 	test('fetchRandom is strictly guild-scoped, no fallback', () => {
 		const db = freshStore();
 		// Guild A has a quote; guild B has a quote; another quote is NULL.
-		db.insert({ message_id: 'ga1', quote: 'AAA GUILD A LOUD THING', said: 'a', channel_id: 'c1', guild_id: 'g-a' });
-		db.insert({ message_id: 'gb1', quote: 'BBB GUILD B LOUD THING', said: 'b', channel_id: 'c2', guild_id: 'g-b' });
-		db.insert({ message_id: 'gn1', quote: 'GLOBAL NULL GUILD QUOTE', said: 'n', channel_id: 'c3', guild_id: null });
+		db.insert({
+			message_id: 'ga1',
+			quote: 'AAA GUILD A LOUD THING',
+			said: 'a',
+			channel_id: 'c1',
+			guild_id: 'g-a',
+		});
+		db.insert({
+			message_id: 'gb1',
+			quote: 'BBB GUILD B LOUD THING',
+			said: 'b',
+			channel_id: 'c2',
+			guild_id: 'g-b',
+		});
+		db.insert({
+			message_id: 'gn1',
+			quote: 'GLOBAL NULL GUILD QUOTE',
+			said: 'n',
+			channel_id: 'c3',
+			guild_id: null,
+		});
 
 		// Guild A gets only A's quote.
 		expect(db.fetchRandom('g-a')?.guild_id).toBe('g-a');
@@ -118,8 +172,20 @@ describe('quotes', () => {
 
 	test('search matches substring wildcards', () => {
 		const db = freshStore();
-		db.insert({ message_id: 'a1', quote: 'HELLO WORLD LOUD', said: 'a', channel_id: 'c', guild_id: 'g1' });
-		db.insert({ message_id: 'a2', quote: 'GOODBYE QUIET THING', said: 'b', channel_id: 'c', guild_id: 'g1' });
+		db.insert({
+			message_id: 'a1',
+			quote: 'HELLO WORLD LOUD',
+			said: 'a',
+			channel_id: 'c',
+			guild_id: 'g1',
+		});
+		db.insert({
+			message_id: 'a2',
+			quote: 'GOODBYE QUIET THING',
+			said: 'b',
+			channel_id: 'c',
+			guild_id: 'g1',
+		});
 		const results = db.search('g1', 'hello');
 		expect(results).toHaveLength(1);
 		expect(results[0]!.quote).toBe('HELLO WORLD LOUD');
@@ -127,16 +193,40 @@ describe('quotes', () => {
 
 	test('search prefix ^ and suffix $ work', () => {
 		const db = freshStore();
-		db.insert({ message_id: 'p1', quote: 'ALPHA LOUD WORDS', said: 'a', channel_id: 'c', guild_id: 'g1' });
-		db.insert({ message_id: 'p2', quote: 'BETA LOUD WORDS', said: 'b', channel_id: 'c', guild_id: 'g1' });
+		db.insert({
+			message_id: 'p1',
+			quote: 'ALPHA LOUD WORDS',
+			said: 'a',
+			channel_id: 'c',
+			guild_id: 'g1',
+		});
+		db.insert({
+			message_id: 'p2',
+			quote: 'BETA LOUD WORDS',
+			said: 'b',
+			channel_id: 'c',
+			guild_id: 'g1',
+		});
 		expect(db.search('g1', '^ALPHA')).toHaveLength(1);
 		expect(db.search('g1', 'WORDS$')).toHaveLength(2);
 	});
 
 	test('search is guild-scoped (no cross-server leak)', () => {
 		const db = freshStore();
-		db.insert({ message_id: 's1', quote: 'SECRET SERVER A QUOTE', said: 'a', channel_id: 'c1', guild_id: 'g-a' });
-		db.insert({ message_id: 's2', quote: 'SECRET SERVER A QUOTE', said: 'a', channel_id: 'c2', guild_id: 'g-b' });
+		db.insert({
+			message_id: 's1',
+			quote: 'SECRET SERVER A QUOTE',
+			said: 'a',
+			channel_id: 'c1',
+			guild_id: 'g-a',
+		});
+		db.insert({
+			message_id: 's2',
+			quote: 'SECRET SERVER A QUOTE',
+			said: 'a',
+			channel_id: 'c2',
+			guild_id: 'g-b',
+		});
 		// Searching server B must NOT find server A's copy.
 		expect(db.search('g-b', 'SECRET SERVER')).toHaveLength(1);
 		expect(db.search('g-b', 'SECRET SERVER')[0]!.guild_id).toBe('g-b');
@@ -210,12 +300,8 @@ describe('enable/disable allowlist', () => {
 				added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 			) STRICT;
 		`);
-		legacy.run(
-			"INSERT INTO ignores (id, kind, target_id) VALUES ('i1', 'channel', 'c-ignored')",
-		);
-		legacy.run(
-			"INSERT INTO ignores (id, kind, target_id) VALUES ('i2', 'guild', 'g-ignored')",
-		);
+		legacy.run("INSERT INTO ignores (id, kind, target_id) VALUES ('i1', 'channel', 'c-ignored')");
+		legacy.run("INSERT INTO ignores (id, kind, target_id) VALUES ('i2', 'guild', 'g-ignored')");
 		legacy.close();
 
 		const store = openDatabase(path);

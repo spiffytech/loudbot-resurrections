@@ -29,28 +29,29 @@ Bun.serve({
 
 			const gateway = getGatewayState();
 			if (!gateway.connected || !gateway.ready) {
-				return new Response(JSON.stringify({ status: 'unhealthy', reason: 'discord gateway not ready' }), {
-					status: 503,
-					headers: { 'content-type': 'application/json' },	
-				});
+				return new Response(
+					JSON.stringify({ status: 'unhealthy', reason: 'discord gateway not ready' }),
+					{
+						status: 503,
+						headers: { 'content-type': 'application/json' },
+					},
+				);
 			}
 
 			return new Response(JSON.stringify({ status: 'ok' }), {
-				headers: { 'content-type': 'application/json' },	
+				headers: { 'content-type': 'application/json' },
 			});
 		} catch (e) {
 			return new Response(JSON.stringify({ status: 'unhealthy', reason: String(e) }), {
 				status: 503,
-				headers: { 'content-type': 'application/json' },	
+				headers: { 'content-type': 'application/json' },
 			});
 		}
 	},
 });
 
 async function main() {
-	console.log(
-		`Starting LoudBot (${config.discordAppId}) with database ${config.databasePath}`,	
-	);
+	console.log(`Starting LoudBot (${config.discordAppId}) with database ${config.databasePath}`);
 	connectGateway();
 
 	const shutdown = (sig: string) => {

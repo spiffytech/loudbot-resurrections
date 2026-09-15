@@ -52,7 +52,10 @@ export function isLoud(line: string, debug = false): boolean {
 		{ id: 'less than 2 lowercase', pred: (l: string) => lower < 2 },
 		// Caps-or-space density (calculated on stripped text, but the strip
 		// already removed emoji, so this is the pure-text density).
-		{ id: 'caps-or-space density > 0.85', pred: (l: string) => l.length > 0 && (caps + spaces) / l.length > 0.85 },
+		{
+			id: 'caps-or-space density > 0.85',
+			pred: (l: string) => l.length > 0 && (caps + spaces) / l.length > 0.85,
+		},
 	];
 
 	for (const c of criteria) {

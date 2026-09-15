@@ -50,17 +50,17 @@ bun run start          # or: bun run dev (watch mode)
 
 Address the bot with `@loudbot` or `loudbot`, and one of:
 
-| Command | Behavior |
-|---|---|
-| `source` | Reply with the source repo URL. |
-| `whosaid` | Who said the last quote shown in this channel, and where. |
-| `search <pattern>` | Search the corpus (wildcards `*` supported); first match. |
-| `next` | Next result from the last `search`. |
-| `enable #channel` / `enable server` | Start reacting in a channel / this server. |
-| `disable #channel` / `disable server` | Stop reacting in a channel / this server. |
-| `ignore me` | Ignore all of your messages here. |
-| `unignore me` | Undo the ignore. |
-| `stop yelling at me` / `please yell at me` | Lowercase-ify / restore my replies to you. |
+| Command                                    | Behavior                                                  |
+| ------------------------------------------ | --------------------------------------------------------- |
+| `source`                                   | Reply with the source repo URL.                           |
+| `whosaid`                                  | Who said the last quote shown in this channel, and where. |
+| `search <pattern>`                         | Search the corpus (wildcards `*` supported); first match. |
+| `next`                                     | Next result from the last `search`.                       |
+| `enable #channel` / `enable server`        | Start reacting in a channel / this server.                |
+| `disable #channel` / `disable server`      | Stop reacting in a channel / this server.                 |
+| `ignore me`                                | Ignore all of your messages here.                         |
+| `unignore me`                              | Undo the ignore.                                          |
+| `stop yelling at me` / `please yell at me` | Lowercase-ify / restore my replies to you.                |
 
 ## Storage
 

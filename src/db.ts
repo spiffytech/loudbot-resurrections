@@ -125,12 +125,8 @@ export function openDatabase(filename: string): QuoteStore {
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING
 	`);
-	const byMessageIdStmt = db.query(
-		'SELECT * FROM quotes WHERE message_id = ?',
-	);
-	const byQuoteStmt = db.query(
-		'SELECT * FROM quotes WHERE guild_id = ? AND quote = ?',
-	);
+	const byMessageIdStmt = db.query('SELECT * FROM quotes WHERE message_id = ?');
+	const byQuoteStmt = db.query('SELECT * FROM quotes WHERE guild_id = ? AND quote = ?');
 	const updateStmt = db.query(
 		`UPDATE quotes SET quote = ?, edited_at = ?
 		 WHERE message_id = ?`,
@@ -151,9 +147,7 @@ export function openDatabase(filename: string): QuoteStore {
 	const allowlistInsertStmt = db.query(
 		'INSERT OR IGNORE INTO allowlist (kind, target_id) VALUES (?, ?)',
 	);
-	const allowlistDeleteStmt = db.query(
-		'DELETE FROM allowlist WHERE kind = ? AND target_id = ?',
-	);
+	const allowlistDeleteStmt = db.query('DELETE FROM allowlist WHERE kind = ? AND target_id = ?');
 	const userPrefsGetStmt = db.query(
 		'SELECT ignored, lowercase_replies FROM user_prefs WHERE guild_id = ? AND user_id = ?',
 	);
@@ -225,11 +219,7 @@ export function openDatabase(filename: string): QuoteStore {
 		},
 
 		search(guildId: string, pattern: string, limit = 100) {
-			return searchStmt.all(
-				guildId,
-				toLikePattern(pattern),
-				limit,
-			) as QuoteRow[];
+			return searchStmt.all(guildId, toLikePattern(pattern), limit) as QuoteRow[];
 		},
 
 		setEnabled(kind: AllowlistKind, targetId: string, enabled: boolean) {
@@ -260,12 +250,7 @@ export function openDatabase(filename: string): QuoteStore {
 				guildId,
 				userId,
 			);
-			userPrefsUpsertStmt.run(
-				guildId,
-				userId,
-				ignored ? 1 : 0,
-				current?.lowercase_replies ?? 0,
-			);
+			userPrefsUpsertStmt.run(guildId, userId, ignored ? 1 : 0, current?.lowercase_replies ?? 0);
 		},
 
 		setUserLowercase(guildId: string, userId: string, lowercase: boolean) {
@@ -274,27 +259,20 @@ export function openDatabase(filename: string): QuoteStore {
 				guildId,
 				userId,
 			);
-			userPrefsUpsertStmt.run(
-				guildId,
-				userId,
-				current?.ignored ?? 0,
-				lowercase ? 1 : 0,
-			);
+			userPrefsUpsertStmt.run(guildId, userId, current?.ignored ?? 0, lowercase ? 1 : 0);
 		},
 
 		nullGuildChannels() {
 			return (
-				db
-					.query('SELECT DISTINCT channel_id FROM quotes WHERE guild_id IS NULL')
-					.all() as { channel_id: string }[]
+				db.query('SELECT DISTINCT channel_id FROM quotes WHERE guild_id IS NULL').all() as {
+					channel_id: string;
+				}[]
 			).map((r) => r.channel_id);
 		},
 
 		setGuildByChannel(channelId: string, guildId: string) {
 			const result = db
-				.query(
-					'UPDATE quotes SET guild_id = ? WHERE channel_id = ? AND guild_id IS NULL',
-				)
+				.query('UPDATE quotes SET guild_id = ? WHERE channel_id = ? AND guild_id IS NULL')
 				.run(guildId, channelId);
 			return Number(result.changes);
 		},
@@ -331,8 +309,7 @@ function applySchema(db: Database): void {
 		.get() as { sql: string } | null;
 	const quotesIsLegacy =
 		quotesRow !== null &&
-		(!quotesRow.sql.includes('STRICT') ||
-			!quotesRow.sql.includes('UNIQUE (guild_id, quote)'));
+		(!quotesRow.sql.includes('STRICT') || !quotesRow.sql.includes('UNIQUE (guild_id, quote)'));
 
 	if (quotesIsLegacy) {
 		interface LegacyQuote {
@@ -351,9 +328,7 @@ function applySchema(db: Database): void {
 			// Migrate quotes: derive deterministic uuid7 ids from each
 			// row's message-id timestamp (preserving backfilled data),
 			// and cast numeric ids to text keys.
-			const oldRows = db
-				.query('SELECT * FROM quotes_legacy')
-				.all() as LegacyQuote[];
+			const oldRows = db.query('SELECT * FROM quotes_legacy').all() as LegacyQuote[];
 			const insertQuote = db.query(
 				`INSERT INTO quotes (id, message_id, quote, said, channel_id, guild_id, created_at, edited_at)
 				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -37,9 +37,7 @@ export const setBotUser = (id: string): void => {
  * Addressed messages dispatch to commands; every other message is a
  * candidate for the loudness trigger + learning.
  */
-export const receiveMessage = async (
-	message: GatewayMessageCreateDispatchData,
-): Promise<void> => {
+export const receiveMessage = async (message: GatewayMessageCreateDispatchData): Promise<void> => {
 	const content = message.content ?? '';
 	if (!content) return;
 
@@ -98,9 +96,7 @@ const triggerAndLearn = (message: MessageEvent, content: string): void => {
 			guild_id: message.guild_id ?? null,
 		});
 		if (inserted) {
-			console.log(
-				`Learned from ${message.author.username} in ${message.channel_id}: ${content}`,
-			);
+			console.log(`Learned from ${message.author.username} in ${message.channel_id}: ${content}`);
 		}
 	}
 };
@@ -122,10 +118,7 @@ const stripCommandPrefix = (content: string): string | null => {
 };
 
 /** Dispatch an addressed command; returns true when a command matched. */
-const handleCommand = async (
-	message: MessageEvent,
-	command: string,
-): Promise<boolean> => {
+const handleCommand = async (message: MessageEvent, command: string): Promise<boolean> => {
 	const lower = command.toLowerCase();
 
 	if (lower === 'source') {
@@ -167,7 +160,11 @@ const handleCommand = async (
 	}
 	const enableMatch = /^(enable|disable)(?:\s+(.+))?$/i.exec(command);
 	if (enableMatch) {
-		await handleEnable(message, enableMatch[1]!.toLowerCase() === 'enable', enableMatch[2]?.trim() ?? '');
+		await handleEnable(
+			message,
+			enableMatch[1]!.toLowerCase() === 'enable',
+			enableMatch[2]?.trim() ?? '',
+		);
 		return true;
 	}
 	return false;
@@ -187,7 +184,7 @@ const replyWithQuote = async (channelId: string, quote: ReplyQuote): Promise<voi
 
 const handleIgnoreMe = async (message: MessageEvent): Promise<void> => {
 	if (!message.guild_id) {
-		await rest.sendMessage(message.channel_id, "“ignore me” only works in a server.");
+		await rest.sendMessage(message.channel_id, '“ignore me” only works in a server.');
 		return;
 	}
 	db.setUserIgnored(message.guild_id, message.author.id, true);
@@ -199,7 +196,7 @@ const handleIgnoreMe = async (message: MessageEvent): Promise<void> => {
 
 const handleUnignoreMe = async (message: MessageEvent): Promise<void> => {
 	if (!message.guild_id) {
-		await rest.sendMessage(message.channel_id, "“unignore me” only works in a server.");
+		await rest.sendMessage(message.channel_id, '“unignore me” only works in a server.');
 		return;
 	}
 	db.setUserIgnored(message.guild_id, message.author.id, false);
@@ -211,7 +208,7 @@ const handleUnignoreMe = async (message: MessageEvent): Promise<void> => {
 
 const handleStopYelling = async (message: MessageEvent): Promise<void> => {
 	if (!message.guild_id) {
-		await rest.sendMessage(message.channel_id, "“stop yelling at me” only works in a server.");
+		await rest.sendMessage(message.channel_id, '“stop yelling at me” only works in a server.');
 		return;
 	}
 	db.setUserLowercase(message.guild_id, message.author.id, true);
@@ -223,14 +220,11 @@ const handleStopYelling = async (message: MessageEvent): Promise<void> => {
 
 const handlePleaseYell = async (message: MessageEvent): Promise<void> => {
 	if (!message.guild_id) {
-		await rest.sendMessage(message.channel_id, "“please yell at me” only works in a server.");
+		await rest.sendMessage(message.channel_id, '“please yell at me” only works in a server.');
 		return;
 	}
 	db.setUserLowercase(message.guild_id, message.author.id, false);
-	await rest.sendMessage(
-		message.channel_id,
-		`FULL VOLUME RESTORED, ${message.author.username}!`,
-	);
+	await rest.sendMessage(message.channel_id, `FULL VOLUME RESTORED, ${message.author.username}!`);
 };
 
 const handleHelp = async (message: MessageEvent): Promise<void> => {
@@ -308,11 +302,7 @@ const handleNext = async (message: MessageEvent): Promise<void> => {
 	await rest.sendMessage(message.channel_id, `${next!.quote} — ${next!.said}${countNote}`);
 };
 
-const handleEnable = async (
-	message: MessageEvent,
-	enable: boolean,
-	arg: string,
-): Promise<void> => {
+const handleEnable = async (message: MessageEvent, enable: boolean, arg: string): Promise<void> => {
 	const action = enable ? 'enable' : 'disable';
 	if (!arg) {
 		await rest.sendMessage(
@@ -387,9 +377,7 @@ export const handleMessageUpdate = async (
 			guild_id: message.guild_id ?? null,
 		});
 		if (inserted) {
-			console.log(
-			`Learned edited message ${message.id} from ${message.author.username}`,
-			);
+			console.log(`Learned edited message ${message.id} from ${message.author.username}`);
 		}
 	}
 };
@@ -405,9 +393,7 @@ export const handleMessageDelete = (messageId: string): void => {
  * A ❌ reaction on one of the bot's quote replies deletes the reply
  * message and the underlying quote from the corpus.
  */
-export const handleReactionAdd = (
-	data: GatewayMessageReactionAddDispatchData,
-): void => {
+export const handleReactionAdd = (data: GatewayMessageReactionAddDispatchData): void => {
 	// Only react to the bot's own messages.
 	if (data.message_author_id !== botUserId) return;
 	// Only the ❌ emoji.

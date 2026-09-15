@@ -4,10 +4,7 @@ import { RouteBases, Routes } from 'discord-api-types/v10';
 
 const USER_AGENT = `DiscordBot (${config.discordAppId}, 1.0.0)`;
 
-async function request<T>(
-	endpoint: string,
-	options: RequestInit = {},
-): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
 	const response = await fetch(`${RouteBases.api}${endpoint}`, {
 		...options,
 		headers: {
@@ -64,8 +61,6 @@ export const rest = {
 		const query = new URLSearchParams();
 		query.set('limit', String(Math.min(limit, 100)));
 		if (before) query.set('before', before);
-		return request<APIMessage[]>(
-			`${Routes.channelMessages(channelId)}?${query}`,
-		);
+		return request<APIMessage[]>(`${Routes.channelMessages(channelId)}?${query}`);
 	},
 };

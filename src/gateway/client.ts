@@ -1,7 +1,4 @@
-import {
-	GatewayOpcodes,
-	GatewayIntentBits,
-} from 'discord-api-types/v10';
+import { GatewayOpcodes, GatewayIntentBits } from 'discord-api-types/v10';
 import type {
 	GatewayHelloData,
 	GatewayReadyDispatchData,
@@ -30,7 +27,11 @@ let isIntentionalClose = false;
 
 let gatewayReady = false;
 
-export function getGatewayState(): { connected: boolean; ready: boolean; botUserId: string | null } {
+export function getGatewayState(): {
+	connected: boolean;
+	ready: boolean;
+	botUserId: string | null;
+} {
 	return {
 		connected: ws?.readyState === WebSocket.OPEN && !isIntentionalClose,
 		ready: gatewayReady,
@@ -217,9 +218,7 @@ function reconnect(): void {
 function scheduleReconnect(): void {
 	const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000) + Math.random() * 1000;
 	reconnectAttempts++;
-	console.log(
-		`Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts})`,
-	);
+	console.log(`Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts})`);
 	setTimeout(connectGateway, delay);
 }
 

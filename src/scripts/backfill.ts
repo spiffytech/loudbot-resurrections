@@ -68,9 +68,7 @@ function parseArgs(): {
 		}
 	}
 	if (!guild && channels.length === 0 && !repairGuilds) {
-		throw new Error(
-			'Provide --guild <id>, --channel <id>, or --repair-guilds',
-		);
+		throw new Error('Provide --guild <id>, --channel <id>, or --repair-guilds');
 	}
 	return { guild, channels, repairGuilds };
 }
@@ -82,10 +80,7 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 /** Fetch one page; on 429, wait out the rate limit and retry. */
-async function fetchPage(
-	channelId: string,
-	before: string | undefined,
-): Promise<APIMessage[]> {
+async function fetchPage(channelId: string, before: string | undefined): Promise<APIMessage[]> {
 	for (;;) {
 		try {
 			return await rest.getChannelMessages(channelId, { before });
@@ -93,9 +88,7 @@ async function fetchPage(
 			// rest throws `Discord API 429: …` — detect and retry.
 			const message = error instanceof Error ? error.message : String(error);
 			if (!/429/.test(message)) throw error;
-			const retryAfter = Number(
-				/retry-after:\s*(\d+)/i.exec(message)?.[1] ?? '1',
-			);
+			const retryAfter = Number(/retry-after:\s*(\d+)/i.exec(message)?.[1] ?? '1');
 			console.log(`Rate limited; waiting ${retryAfter}s`);
 			await sleepMs(retryAfter * 1000);
 		}
@@ -141,8 +134,7 @@ async function repairGuilds(): Promise<number> {
 	for (const channelId of channels) {
 		try {
 			const channel = await rest.getChannel(channelId);
-			const guildId =
-				'guild_id' in channel ? (channel.guild_id ?? null) : null;
+			const guildId = 'guild_id' in channel ? (channel.guild_id ?? null) : null;
 			if (!guildId) continue;
 			updated += db.setGuildByChannel(channelId, guildId);
 			console.log(`Channel ${channelId} -> guild ${guildId}`);
@@ -168,9 +160,7 @@ async function main(): Promise<void> {
 	let guildIdForRows: string | null = guild ?? null;
 	if (guild) {
 		const guildChannels = await rest.getGuildChannels(guild);
-		targets = guildChannels
-			.filter((c) => TEXT_CHANNEL_TYPES.has(c.type))
-			.map((c) => c.id);
+		targets = guildChannels.filter((c) => TEXT_CHANNEL_TYPES.has(c.type)).map((c) => c.id);
 		console.log(`Backfilling ${targets.length} text channels in guild ${guild}`);
 	} else {
 		// Resolve each channel's guild so stored quotes are scoped. If a
@@ -179,7 +169,7 @@ async function main(): Promise<void> {
 	}
 
 	let total = 0;
-		for (const id of targets) {
+	for (const id of targets) {
 		try {
 			if (!guild) {
 				const channel = await rest.getChannel(id);

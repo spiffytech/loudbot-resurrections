@@ -7,12 +7,7 @@ import type { APIMessage } from 'discord-api-types/v10';
 // The backfill logic (pagination + filter + insert) is exercised here
 // against a fake REST layer, since a real token isn't available in tests.
 
-function fakeMessage(
-	id: string,
-	content: string,
-	channelId = 'c1',
-	type = 0,
-): APIMessage {
+function fakeMessage(id: string, content: string, channelId = 'c1', type = 0): APIMessage {
 	return {
 		id,
 		channel_id: channelId,
