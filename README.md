@@ -1,5 +1,7 @@
 # LoudBot Resurrections
 
+![MutuaL-1.2](https://img.shields.io/badge/License-MutuaL--1.2-af2e1a?style=flat&labelColor=110402&link=https%3A%2F%2Fcodeberg.org%2FMutualism%2FMutualist-License)
+
 A Discord port of the original IRC loudbot: it replies with a stored quote
 whenever someone is loud, and learns every loud message for future quoting.
 It only reacts in servers/channels it has been explicitly enabled in.
@@ -115,3 +117,8 @@ container healthcheck.
 
 - `bun test` — unit tests (filter + db).
 - `bun run start` — run the bot.
+
+## License
+
+Licensed under the Mutualist License v1.2, or any later version. See
+[LICENSE.md](LICENSE.md) for the full text.
