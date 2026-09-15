@@ -70,9 +70,10 @@ in), and `user_prefs` (per-user ignore / lowercase-reply settings). The
 original Redis-backed corpus is not imported; the bot starts empty and
 learns.
 
-Databases from before the allowlist existed used an `ignores` table with the
-opposite meaning. Those rows are dropped on open, so such a bot comes up with
-nothing enabled and must be re-invited with `enable`.
+Databases from before the allowlist existed kept the same data in an `ignores`
+table. Those rows are carried into `allowlist` on open, so an already-running
+bot keeps reacting in exactly the channels it was reacting in and nothing
+changes until you `enable` or `disable` something.
 
 ## Backfilling quotes
 

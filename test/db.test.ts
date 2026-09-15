@@ -286,10 +286,11 @@ describe('enable/disable allowlist', () => {
 		expect(db.isChannelEnabled('g1', 'c1')).toBe(false);
 	});
 
-	test('a legacy ignores table cannot enable anything', () => {
-		// Pre-allowlist builds wrote deliberate *ignores* into an `ignores`
-		// table. Reusing that table as the allowlist would silently read
-		// those channels as enabled, so opening such a DB must drop it.
+	test('legacy ignore rows carry over as enabled', () => {
+		// Pre-allowlist builds kept their active channels in an `ignores`
+		// table, and the allowlist code already read those rows as enabled.
+		// Opening such a DB keeps the bot reacting in the same channels —
+		// it must not drop them (silence) or enable anything else.
 		const path = join(tmpdir(), `loudbot-legacy-${Bun.randomUUIDv7()}.sqlite`);
 		const legacy = new Database(path, { create: true });
 		legacy.run(`
@@ -300,15 +301,17 @@ describe('enable/disable allowlist', () => {
 				added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 			) STRICT;
 		`);
-		legacy.run("INSERT INTO ignores (id, kind, target_id) VALUES ('i1', 'channel', 'c-ignored')");
-		legacy.run("INSERT INTO ignores (id, kind, target_id) VALUES ('i2', 'guild', 'g-ignored')");
+		legacy.run("INSERT INTO ignores (id, kind, target_id) VALUES ('i1', 'channel', 'c-was-on')");
+		legacy.run("INSERT INTO ignores (id, kind, target_id) VALUES ('i2', 'guild', 'g-was-on')");
 		legacy.close();
 
 		const store = openDatabase(path);
 		store.init();
 		stores.push(store);
-		expect(store.isChannelEnabled('g-ignored', 'c-ignored')).toBe(false);
-		expect(store.isChannelEnabled('g-ignored', 'c-anything')).toBe(false);
+		// Exactly the rows that were already there, no more.
+		expect(store.isChannelEnabled('g-other', 'c-was-on')).toBe(true);
+		expect(store.isChannelEnabled('g-was-on', 'c-other')).toBe(true);
+		expect(store.isChannelEnabled('g-other', 'c-other')).toBe(false);
 		store.close();
 		rmSync(path, { force: true });
 		rmSync(`${path}-wal`, { force: true });

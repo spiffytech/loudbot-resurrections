@@ -383,11 +383,18 @@ function createTables(db: Database): void {
 			PRIMARY KEY (guild_id, user_id)
 		) STRICT;
 	`);
-	// Pre-allowlist builds stored *ignore* entries in an `ignores` table —
-	// the exact opposite meaning, so dropping it is the migration: those
-	// rows would otherwise read as "enabled". Nothing writes it anymore,
-	// and the drop is idempotent, so it's safe to run on every start.
-	db.run('DROP TABLE IF EXISTS ignores');
+	// Pre-allowlist builds kept their active channels in `ignores`. The
+	// allowlist code already treats those rows as "enabled", so carry them
+	// over verbatim: a bot reacting in three channels keeps reacting in
+	// exactly those three. Dropping the source table means this runs once —
+	// nothing recreates it, so a later `disable` is not undone.
+	const legacyIgnores = db
+		.query(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'ignores'`)
+		.get();
+	if (legacyIgnores) {
+		db.run('INSERT OR IGNORE INTO allowlist (kind, target_id) SELECT kind, target_id FROM ignores');
+		db.run('DROP TABLE ignores');
+	}
 }
 
 function getOne<T>(stmt: StatementLike, ...params: SQLQueryBindings[]): T | null {
