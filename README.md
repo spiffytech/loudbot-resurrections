@@ -1,8 +1,8 @@
 # LoudBot Resurrections
 
-A Discord port of the original IRC loudbot: it listens to every channel it has
-access to, replies with a stored quote whenever someone is loud, and learns
-every loud message for future quoting.
+A Discord port of the original IRC loudbot: it replies with a stored quote
+whenever someone is loud, and learns every loud message for future quoting.
+It only reacts in servers/channels it has been explicitly enabled in.
 
 ## Running
 
@@ -20,16 +20,27 @@ bun run start          # or: bun run dev (watch mode)
   content and the bot can neither learn nor reply.
 - Invite the bot with these permissions: `View Channels`, `Send Messages`,
   and `Send Messages in Threads` (permission integer `19456`). It reacts to
-  messages in every guild/channel/thread it can see. Thread messages need
-  `Send Messages in Threads` for replies; receiving them requires no extra
-  intent.
+  messages **only in guilds/channels it has been explicitly enabled in**
+  (default: none). Use `@loudbot enable #channel` / `enable server` to
+  invite it into a channel. Thread messages need `Send Messages in Threads`
+  for replies; receiving them requires no extra intent.
+- Reaction events (the ❌ delete, below) need the `Guild Message Reactions`
+  intent, which is not privileged — there is no dashboard toggle. If ❌ does
+  nothing in a channel, add `Read Message History` to the invite.
 
 ## Behavior
 
 - A message is loud if it passes the ported `LOUDBOT::Filter` heuristics —
   all-caps, few lowercase letters, high caps-or-space density — or is entirely
   uppercase.
+- Emoji are tolerated like spaces: `THIS IS AMAZING 🔥🔥` stays loud (the
+  emoji are ignored, not counted), but a message with too many — more than
+  one emoji per five characters (`WOW 😀😀😀😀`, `🔥🔥🔥🔥🔥`) — does not
+  trigger. Emoji never rescue a non-shout (`amazing 🔥🔥` stays quiet).
 - Loud messages trigger a reply with a random quote from the corpus.
+- React ❌ to one of the bot's quotes to delete that reply and the underlying
+  quote from the corpus. The reply→quote link is held in memory, so it only
+  works for quotes posted since the last restart.
 - Loud messages are also learned: they become future quotes (deduplicated by
   text).
 - An empty corpus triggers with `EMPTY_CORPUS_MESSAGE` until the bot has heard
@@ -45,15 +56,23 @@ Address the bot with `@loudbot` or `loudbot`, and one of:
 | `whosaid` | Who said the last quote shown in this channel, and where. |
 | `search <pattern>` | Search the corpus (wildcards `*` supported); first match. |
 | `next` | Next result from the last `search`. |
-| `ignore #channel` | Stop listening/replying in that channel. |
-| `ignore server` | Stop listening/replying in this server. |
-| `unignore #channel` / `unignore server` | Re-enable. |
+| `enable #channel` / `enable server` | Start reacting in a channel / this server. |
+| `disable #channel` / `disable server` | Stop reacting in a channel / this server. |
+| `ignore me` | Ignore all of your messages here. |
+| `unignore me` | Undo the ignore. |
+| `stop yelling at me` / `please yell at me` | Lowercase-ify / restore my replies to you. |
 
 ## Storage
 
 SQLite at `$databasePath` (default `data/db.sqlite`), created on first
-run. Schema: `quotes`, `ignores`. The original Redis-backed corpus is not
-imported; the bot starts empty and learns.
+run. Schema: `quotes`, `allowlist` (the servers/channels the bot may react
+in), and `user_prefs` (per-user ignore / lowercase-reply settings). The
+original Redis-backed corpus is not imported; the bot starts empty and
+learns.
+
+Databases from before the allowlist existed used an `ignores` table with the
+opposite meaning. Those rows are dropped on open, so such a bot comes up with
+nothing enabled and must be re-invited with `enable`.
 
 ## Backfilling quotes
 
@@ -82,6 +101,14 @@ If you backfilled before scoping existed, fix the existing rows once
 ```bash
 bun run src/scripts/backfill.ts --repair-guilds
 ```
+
+## Health
+
+`GET /health` on `$PORT` (default `3000`) answers `200 {"status":"ok"}` only
+when the Discord gateway is connected and ready, and `503` otherwise —
+including when the SQLite file is not writable (read-only mount, wrong
+ownership), which it probes with a write transaction. Suitable as the
+container healthcheck.
 
 ## Development
 

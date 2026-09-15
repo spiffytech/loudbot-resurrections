@@ -1,4 +1,8 @@
 import { describe, expect, test, afterAll } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { openDatabase } from '../src/db.ts';
 import type { QuoteStore } from '../src/db.ts';
 
@@ -34,6 +38,22 @@ describe('quotes', () => {
 		expect(row).not.toBeNull();
 		expect(db.total()).toBe(1);
 		expect(db.fetchRandom('g1')?.quote).toBe('THIS IS A LOUD QUOTE');
+	});
+
+	test('deleteById removes a quote by uuid7 id', () => {
+		const db = freshStore();
+		const row = db.insert({
+			message_id: 'del1',
+			quote: 'QUOTE TO DELETE BY ID',
+			said: 'x',
+			channel_id: 'c4',
+			guild_id: 'g1',
+		});
+		expect(row).not.toBeNull();
+		expect(db.deleteById(row!.id)).toBe(true);
+		expect(db.total()).toBe(0);
+		// Second delete is a no-op.
+		expect(db.deleteById(row!.id)).toBe(false);
 	});
 
 	test('quote dedupes per-guild, not globally', () => {
@@ -126,17 +146,86 @@ describe('quotes', () => {
 	});
 });
 
-describe('ignores', () => {
-	test('channel and guild ignore round-trip', () => {
+describe('user prefs', () => {
+	test('ignore/user lowercase round-trip', () => {
 		const db = freshStore();
-		db.addIgnore('channel', 'c1');
-		db.addIgnore('guild', 'g1');
-		expect(db.isIgnored('channel', 'c1')).toBe(true);
-		expect(db.isIgnored('guild', 'g1')).toBe(true);
-		expect(db.isChannelIgnored('g9', 'c1')).toBe(true);
-		expect(db.isChannelIgnored('g1', 'c9')).toBe(true);
-		expect(db.isChannelIgnored('g9', 'c9')).toBe(false);
-		expect(db.removeIgnore('channel', 'c1')).toBe(true);
-		expect(db.isIgnored('channel', 'c1')).toBe(false);
+		expect(db.isUserIgnored('g1', 'u1')).toBe(false);
+		expect(db.wantsLowercaseReplies('g1', 'u1')).toBe(false);
+
+		db.setUserIgnored('g1', 'u1', true);
+		expect(db.isUserIgnored('g1', 'u1')).toBe(true);
+		// Setting ignore shouldn't clobber lowercase.
+		db.setUserLowercase('g1', 'u1', true);
+		expect(db.isUserIgnored('g1', 'u1')).toBe(true);
+		expect(db.wantsLowercaseReplies('g1', 'u1')).toBe(true);
+
+		// Unset lowercase; ignore stays.
+		db.setUserLowercase('g1', 'u1', false);
+		expect(db.wantsLowercaseReplies('g1', 'u1')).toBe(false);
+		expect(db.isUserIgnored('g1', 'u1')).toBe(true);
+	});
+
+	test('user prefs are guild-scoped', () => {
+		const db = freshStore();
+		db.setUserIgnored('g1', 'u1', true);
+		expect(db.isUserIgnored('g1', 'u1')).toBe(true);
+		expect(db.isUserIgnored('g2', 'u1')).toBe(false);
+	});
+});
+
+describe('enable/disable allowlist', () => {
+	test('default is none; enable/disable toggles', () => {
+		const db = freshStore();
+		// Default: nothing enabled.
+		expect(db.isChannelEnabled('g9', 'c9')).toBe(false);
+
+		// Enable a channel.
+		db.setEnabled('channel', 'c1', true);
+		expect(db.isChannelEnabled('g9', 'c1')).toBe(true);
+		// Enable a guild.
+		db.setEnabled('guild', 'g1', true);
+		expect(db.isChannelEnabled('g1', 'c9')).toBe(true);
+		// Guild-or-channel: enabled if either matches.
+		expect(db.isChannelEnabled('g1', 'c1')).toBe(true);
+		// Disable the channel; guild still enables.
+		db.setEnabled('channel', 'c1', false);
+		expect(db.isChannelEnabled('g9', 'c1')).toBe(false);
+		expect(db.isChannelEnabled('g1', 'c1')).toBe(true);
+		// Disable the guild.
+		db.setEnabled('guild', 'g1', false);
+		expect(db.isChannelEnabled('g1', 'c1')).toBe(false);
+	});
+
+	test('a legacy ignores table cannot enable anything', () => {
+		// Pre-allowlist builds wrote deliberate *ignores* into an `ignores`
+		// table. Reusing that table as the allowlist would silently read
+		// those channels as enabled, so opening such a DB must drop it.
+		const path = join(tmpdir(), `loudbot-legacy-${Bun.randomUUIDv7()}.sqlite`);
+		const legacy = new Database(path, { create: true });
+		legacy.run(`
+			CREATE TABLE ignores (
+				id TEXT PRIMARY KEY,
+				kind TEXT NOT NULL,
+				target_id TEXT NOT NULL UNIQUE,
+				added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+			) STRICT;
+		`);
+		legacy.run(
+			"INSERT INTO ignores (id, kind, target_id) VALUES ('i1', 'channel', 'c-ignored')",
+		);
+		legacy.run(
+			"INSERT INTO ignores (id, kind, target_id) VALUES ('i2', 'guild', 'g-ignored')",
+		);
+		legacy.close();
+
+		const store = openDatabase(path);
+		store.init();
+		stores.push(store);
+		expect(store.isChannelEnabled('g-ignored', 'c-ignored')).toBe(false);
+		expect(store.isChannelEnabled('g-ignored', 'c-anything')).toBe(false);
+		store.close();
+		rmSync(path, { force: true });
+		rmSync(`${path}-wal`, { force: true });
+		rmSync(`${path}-shm`, { force: true });
 	});
 });

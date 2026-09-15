@@ -16,7 +16,7 @@ export interface QuoteRow {
 	edited_at: string | null;
 }
 
-export type IgnoreKind = 'guild' | 'channel';
+export type AllowlistKind = 'guild' | 'channel';
 
 export interface QuoteStore {
 	init(): void;
@@ -27,11 +27,19 @@ export interface QuoteStore {
 	insert(message: MessageInput): QuoteRow | null;
 	updateQuote(messageId: string, quote: string, editedAt: string): boolean;
 	deleteByMessageId(messageId: string): boolean;
+	/** Delete a quote by our uuid7 id (after a ❌ reaction). */
+	deleteById(id: string): boolean;
 	search(guildId: string, pattern: string, limit?: number): QuoteRow[];
-	addIgnore(kind: IgnoreKind, targetId: string): void;
-	removeIgnore(kind: IgnoreKind, targetId: string): boolean;
-	isIgnored(kind: IgnoreKind, targetId: string): boolean;
-	isChannelIgnored(guildId: string, channelId: string): boolean;
+	/** Enable/disable a guild or channel (allowlist; default none). */
+	setEnabled(kind: AllowlistKind, targetId: string, enabled: boolean): void;
+	/** True if this guild or channel is on the allowlist. */
+	isChannelEnabled(guildId: string, channelId: string): boolean;
+	/** True if this user asked to be ignored in this guild. */
+	isUserIgnored(guildId: string, userId: string): boolean;
+	/** True if this user asked for lowercase replies in this guild. */
+	wantsLowercaseReplies(guildId: string, userId: string): boolean;
+	setUserIgnored(guildId: string, userId: string, ignored: boolean): void;
+	setUserLowercase(guildId: string, userId: string, lowercase: boolean): void;
 	/** Channels that have quotes with a NULL guild (for repair). */
 	nullGuildChannels(): string[];
 	/** For repair: assign a guild to every NULL-guild quote in a channel. */
@@ -137,14 +145,25 @@ export function openDatabase(filename: string): QuoteStore {
 		 WHERE guild_id = ? AND UPPER(quote) LIKE ? ESCAPE '\\'
 		 ORDER BY RANDOM() LIMIT ?`,
 	);
-	const ignoreGetStmt = db.query(
-		'SELECT 1 AS ok FROM ignores WHERE kind = ? AND target_id = ?',
+	const allowlistGetStmt = db.query(
+		'SELECT 1 AS ok FROM allowlist WHERE kind = ? AND target_id = ?',
 	);
-	const ignoreInsertStmt = db.query(
-		'INSERT OR IGNORE INTO ignores (id, kind, target_id) VALUES (?, ?, ?)',
+	const allowlistInsertStmt = db.query(
+		'INSERT OR IGNORE INTO allowlist (kind, target_id) VALUES (?, ?)',
 	);
-	const ignoreDeleteStmt = db.query(
-		'DELETE FROM ignores WHERE kind = ? AND target_id = ?',
+	const allowlistDeleteStmt = db.query(
+		'DELETE FROM allowlist WHERE kind = ? AND target_id = ?',
+	);
+	const userPrefsGetStmt = db.query(
+		'SELECT ignored, lowercase_replies FROM user_prefs WHERE guild_id = ? AND user_id = ?',
+	);
+	const userPrefsUpsertStmt = db.query(
+		`INSERT INTO user_prefs (guild_id, user_id, ignored, lowercase_replies)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(guild_id, user_id) DO UPDATE SET
+			ignored = excluded.ignored,
+			lowercase_replies = excluded.lowercase_replies,
+			updated_at = CURRENT_TIMESTAMP`,
 	);
 
 	return {
@@ -200,6 +219,11 @@ export function openDatabase(filename: string): QuoteStore {
 			return Number(result.changes) > 0;
 		},
 
+		deleteById(id: string) {
+			const result = db.query('DELETE FROM quotes WHERE id = ?').run(id);
+			return Number(result.changes) > 0;
+		},
+
 		search(guildId: string, pattern: string, limit = 100) {
 			return searchStmt.all(
 				guildId,
@@ -208,21 +232,54 @@ export function openDatabase(filename: string): QuoteStore {
 			) as QuoteRow[];
 		},
 
-		addIgnore(kind: IgnoreKind, targetId: string) {
-			ignoreInsertStmt.run(Bun.randomUUIDv7(), kind, targetId);
+		setEnabled(kind: AllowlistKind, targetId: string, enabled: boolean) {
+			if (enabled) allowlistInsertStmt.run(kind, targetId);
+			else allowlistDeleteStmt.run(kind, targetId);
 		},
 
-		removeIgnore(kind: IgnoreKind, targetId: string) {
-			const result = ignoreDeleteStmt.run(kind, targetId);
-			return Number(result.changes) > 0;
+		isChannelEnabled(guildId: string, channelId: string) {
+			return (
+				getOne<{ ok: number }>(allowlistGetStmt, 'guild', guildId) !== null ||
+				getOne<{ ok: number }>(allowlistGetStmt, 'channel', channelId) !== null
+			);
 		},
 
-		isIgnored(kind: IgnoreKind, targetId: string) {
-			return getOne<{ ok: number }>(ignoreGetStmt, kind, targetId) !== null;
+		isUserIgnored(guildId: string, userId: string) {
+			const row = getOne<{ ignored: number }>(userPrefsGetStmt, guildId, userId);
+			return row?.ignored === 1;
 		},
 
-		isChannelIgnored(guildId: string, channelId: string) {
-			return this.isIgnored('guild', guildId) || this.isIgnored('channel', channelId);
+		wantsLowercaseReplies(guildId: string, userId: string) {
+			const row = getOne<{ lowercase_replies: number }>(userPrefsGetStmt, guildId, userId);
+			return row?.lowercase_replies === 1;
+		},
+
+		setUserIgnored(guildId: string, userId: string, ignored: boolean) {
+			const current = getOne<{ ignored: number; lowercase_replies: number }>(
+				userPrefsGetStmt,
+				guildId,
+				userId,
+			);
+			userPrefsUpsertStmt.run(
+				guildId,
+				userId,
+				ignored ? 1 : 0,
+				current?.lowercase_replies ?? 0,
+			);
+		},
+
+		setUserLowercase(guildId: string, userId: string, lowercase: boolean) {
+			const current = getOne<{ ignored: number; lowercase_replies: number }>(
+				userPrefsGetStmt,
+				guildId,
+				userId,
+			);
+			userPrefsUpsertStmt.run(
+				guildId,
+				userId,
+				current?.ignored ?? 0,
+				lowercase ? 1 : 0,
+			);
 		},
 
 		nullGuildChannels() {
@@ -288,17 +345,8 @@ function applySchema(db: Database): void {
 			created_at: string | null;
 			edited_at: string | null;
 		}
-		interface LegacyIgnore {
-			kind: string;
-			target_id: string;
-			added_at: string | null;
-		}
-
 		db.transaction(() => {
-			db.run(`
-				ALTER TABLE quotes RENAME TO quotes_legacy;
-				ALTER TABLE ignores RENAME TO ignores_legacy;
-			`);
+			db.run('ALTER TABLE quotes RENAME TO quotes_legacy');
 			createTables(db);
 			// Migrate quotes: derive deterministic uuid7 ids from each
 			// row's message-id timestamp (preserving backfilled data),
@@ -323,18 +371,6 @@ function applySchema(db: Database): void {
 				);
 			}
 			db.run('DROP TABLE quotes_legacy');
-			// ignores have no message-id timestamp; assign fresh uuid7.
-			const oldIgnores = db
-				.query('SELECT * FROM ignores_legacy')
-				.all() as LegacyIgnore[];
-			const insertIgnore = db.query(
-				`INSERT INTO ignores (id, kind, target_id, added_at)
-				 VALUES (?, ?, ?, ?)`,
-			);
-			for (const r of oldIgnores) {
-				insertIgnore.run(Bun.randomUUIDv7(), r.kind, r.target_id, r.added_at);
-			}
-			db.run('DROP TABLE ignores_legacy');
 		})();
 		return;
 	}
@@ -355,13 +391,28 @@ function createTables(db: Database): void {
 			edited_at TEXT,
 			UNIQUE (guild_id, quote)
 		) STRICT;
-		CREATE TABLE IF NOT EXISTS ignores (
-			id TEXT PRIMARY KEY,
+		-- Allowlist: guilds/channels the bot is allowed to react in. The
+		-- default is none, so this starts empty.
+		CREATE TABLE IF NOT EXISTS allowlist (
 			kind TEXT NOT NULL CHECK (kind IN ('guild', 'channel')),
-			target_id TEXT NOT NULL UNIQUE,
-			added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+			target_id TEXT NOT NULL,
+			added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (kind, target_id)
+		) STRICT;
+		CREATE TABLE IF NOT EXISTS user_prefs (
+			guild_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			ignored INTEGER NOT NULL DEFAULT 0,
+			lowercase_replies INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (guild_id, user_id)
 		) STRICT;
 	`);
+	// Pre-allowlist builds stored *ignore* entries in an `ignores` table —
+	// the exact opposite meaning, so dropping it is the migration: those
+	// rows would otherwise read as "enabled". Nothing writes it anymore,
+	// and the drop is idempotent, so it's safe to run on every start.
+	db.run('DROP TABLE IF EXISTS ignores');
 }
 
 function getOne<T>(stmt: StatementLike, ...params: SQLQueryBindings[]): T | null {

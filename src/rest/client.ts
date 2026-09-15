@@ -36,6 +36,13 @@ export const rest = {
 		});
 	},
 
+	/** Delete a message the bot sent (returns 204). */
+	async deleteMessage(channelId: string, messageId: string): Promise<void> {
+		await request<void>(`${Routes.channelMessages(channelId)}/${messageId}`, {
+			method: 'DELETE',
+		});
+	},
+
 	/** All channels in a guild (categories, text, voice, forum…). */
 	async getGuildChannels(guildId: string): Promise<APIChannel[]> {
 		return request<APIChannel[]>(Routes.guildChannels(guildId));

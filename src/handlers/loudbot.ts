@@ -2,6 +2,7 @@ import { rest } from '../rest/client.js';
 import type {
 	GatewayMessageCreateDispatchData,
 	GatewayMessageUpdateDispatchData,
+	GatewayMessageReactionAddDispatchData,
 } from 'discord-api-types/v10';
 import type { QuoteRow } from '../db.js';
 import { db } from '../store.js';
@@ -20,6 +21,11 @@ const COMMAND_PREFIX_RE = /^loudbot\s*[:,]?\s+/i;
 const lastQuotePerChannel = new Map<string, string>();
 const searchResultsPerChannel = new Map<string, QuoteRow[]>();
 
+// Discord reply-message id -> quote uuid7 id (for ❌ delete).
+const replyMessageToQuote = new Map<string, string>();
+
+type ReplyQuote = { id: string; quote: string };
+
 let botUserId: string | null = null;
 
 export const setBotUser = (id: string): void => {
@@ -37,18 +43,23 @@ export const receiveMessage = async (
 	const content = message.content ?? '';
 	if (!content) return;
 
-	if (isIgnored(message)) return;
+	// Allow-by-default-none: only react in guilds/channels we've been
+	// explicitly enabled in. Addressed messages still get command replies
+	// (so you can enable from the first message), but nothing triggers.
+	const enabled = isEnabled(message);
+
+	const userIgnored = isUserIgnored(message);
 
 	const commandRest = stripCommandPrefix(content);
 	if (commandRest !== null) {
 		const handled = await handleCommand(message, commandRest);
 		// An addressed-but-unhandled loud line still triggers and learns,
 		// matching "respond to literally any all-caps text".
-		if (!handled) triggerAndLearn(message, content);
+		if (!handled && !userIgnored && enabled) triggerAndLearn(message, content);
 		return;
 	}
 
-	triggerAndLearn(message, content);
+	if (!userIgnored && enabled) triggerAndLearn(message, content);
 };
 
 /**
@@ -61,7 +72,17 @@ const triggerAndLearn = (message: MessageEvent, content: string): void => {
 	// Reply with a random quote when the line is loud.
 	if (loud) {
 		const quote = db.fetchRandom(message.guild_id ?? null);
-		void replyWithQuote(message.channel_id, quote?.quote ?? EMPTY_CORPUS_MESSAGE);
+		const wantLower = message.guild_id
+			? db.wantsLowercaseReplies(message.guild_id, message.author.id)
+			: false;
+		const replyText = quote?.quote ?? EMPTY_CORPUS_MESSAGE;
+		const out = wantLower ? replyText.toLowerCase() : replyText;
+		// Echo the (possibly lowercased) text, but map the reply's Discord
+		// message id to the underlying quote's uuid7 for ❌ deletion.
+		void replyWithQuote(message.channel_id, {
+			id: quote?.id ?? '', // empty when corpus empty → not deletable
+			quote: out,
+		});
 	}
 
 	// Learn-on-the-fly: any message loud enough to reply to is also
@@ -128,20 +149,88 @@ const handleCommand = async (
 		await handleSearch(message, searchMatch[1]!);
 		return true;
 	}
-	const ignoreMatch = /^(un)?ignore(?:\s+(.+))?$/i.exec(command);
-	if (ignoreMatch) {
-		await handleIgnore(message, ignoreMatch[1] === undefined, ignoreMatch[2]?.trim() ?? '');
+	if (lower === 'ignore me') {
+		await handleIgnoreMe(message);
+		return true;
+	}
+	if (lower === 'unignore me') {
+		await handleUnignoreMe(message);
+		return true;
+	}
+	if (lower === 'stop yelling at me') {
+		await handleStopYelling(message);
+		return true;
+	}
+	if (lower === 'please yell at me') {
+		await handlePleaseYell(message);
+		return true;
+	}
+	const enableMatch = /^(enable|disable)(?:\s+(.+))?$/i.exec(command);
+	if (enableMatch) {
+		await handleEnable(message, enableMatch[1]!.toLowerCase() === 'enable', enableMatch[2]?.trim() ?? '');
 		return true;
 	}
 	return false;
 };
 
-const replyWithQuote = async (channelId: string, quote: string): Promise<void> => {
+const replyWithQuote = async (channelId: string, quote: ReplyQuote): Promise<void> => {
 	try {
-		await rest.sendMessage(channelId, quote);
+		const sent = await rest.sendMessage(channelId, quote.quote);
+		// Map the Discord message we just posted to the quote's uuid7 so a
+		// later ❌ reaction can delete both. In-memory only; lost on restart.
+		// An empty corpus has no quote to delete, so don't map anything.
+		if (quote.id) replyMessageToQuote.set(sent.id, quote.id);
 	} catch (error) {
 		console.error(`Failed to send quote to ${channelId}:`, error);
 	}
+};
+
+const handleIgnoreMe = async (message: MessageEvent): Promise<void> => {
+	if (!message.guild_id) {
+		await rest.sendMessage(message.channel_id, "“ignore me” only works in a server.");
+		return;
+	}
+	db.setUserIgnored(message.guild_id, message.author.id, true);
+	await rest.sendMessage(
+		message.channel_id,
+		`Okay ${message.author.username}, I'll ignore your messages in this server.`,
+	);
+};
+
+const handleUnignoreMe = async (message: MessageEvent): Promise<void> => {
+	if (!message.guild_id) {
+		await rest.sendMessage(message.channel_id, "“unignore me” only works in a server.");
+		return;
+	}
+	db.setUserIgnored(message.guild_id, message.author.id, false);
+	await rest.sendMessage(
+		message.channel_id,
+		`Welcome back ${message.author.username} — I can hear you again.`,
+	);
+};
+
+const handleStopYelling = async (message: MessageEvent): Promise<void> => {
+	if (!message.guild_id) {
+		await rest.sendMessage(message.channel_id, "“stop yelling at me” only works in a server.");
+		return;
+	}
+	db.setUserLowercase(message.guild_id, message.author.id, true);
+	await rest.sendMessage(
+		message.channel_id,
+		`Understood ${message.author.username} — my replies to you will be whisper-quiet.`,
+	);
+};
+
+const handlePleaseYell = async (message: MessageEvent): Promise<void> => {
+	if (!message.guild_id) {
+		await rest.sendMessage(message.channel_id, "“please yell at me” only works in a server.");
+		return;
+	}
+	db.setUserLowercase(message.guild_id, message.author.id, false);
+	await rest.sendMessage(
+		message.channel_id,
+		`FULL VOLUME RESTORED, ${message.author.username}!`,
+	);
 };
 
 const handleHelp = async (message: MessageEvent): Promise<void> => {
@@ -152,8 +241,13 @@ const handleHelp = async (message: MessageEvent): Promise<void> => {
 		'`search <pattern>` — find a quote (wildcards `*` allowed)',
 		'`next` — show the next search result',
 		'`whosaid` — who said the last quote shown here',
-		'`ignore #channel` / `ignore server` — stop listening in a channel or this server',
-		'`unignore #channel` / `unignore server` — start again',
+		'`enable #channel` / `enable server` — start reacting in a channel or this server',
+		'`disable #channel` / `disable server` — stop reacting in a channel or this server',
+		'`ignore me` — ignore all of your messages here',
+		'`unignore me` — undo the ignore',
+		'`stop yelling at me` — my replies to you become lowercase',
+		'`please yell at me` — undo the lowercase replies',
+		'React ❌ to one of my quotes to delete it',
 		'`help` — this message',
 	].join('\n');
 	await rest.sendMessage(message.channel_id, help);
@@ -214,12 +308,12 @@ const handleNext = async (message: MessageEvent): Promise<void> => {
 	await rest.sendMessage(message.channel_id, `${next!.quote} — ${next!.said}${countNote}`);
 };
 
-const handleIgnore = async (
+const handleEnable = async (
 	message: MessageEvent,
-	ignore: boolean,
+	enable: boolean,
 	arg: string,
 ): Promise<void> => {
-	const action = ignore ? 'ignore' : 'unignore';
+	const action = enable ? 'enable' : 'disable';
 	if (!arg) {
 		await rest.sendMessage(
 			message.channel_id,
@@ -229,31 +323,34 @@ const handleIgnore = async (
 	}
 	const channelMatch = /^<#(\d+)>$/.exec(arg);
 	if (channelMatch?.[1]) {
-		if (ignore) db.addIgnore('channel', channelMatch[1]);
-		else db.removeIgnore('channel', channelMatch[1]);
+		db.setEnabled('channel', channelMatch[1], enable);
 		await rest.sendMessage(
 			message.channel_id,
-			ignore ? 'Ignoring that channel.' : 'Unignored that channel.',
+			enable ? 'Enabled that channel.' : 'Disabled that channel.',
 		);
 		return;
 	}
 	if (/^(server|guild)$/i.test(arg) && message.guild_id) {
-		if (ignore) db.addIgnore('guild', message.guild_id);
-		else db.removeIgnore('guild', message.guild_id);
+		db.setEnabled('guild', message.guild_id, enable);
 		await rest.sendMessage(
 			message.channel_id,
-			ignore ? 'Ignoring this server.' : 'Unignored this server.',
+			enable ? 'Enabled this server.' : 'Disabled this server.',
 		);
 		return;
 	}
 	await rest.sendMessage(
 		message.channel_id,
-		`Invalid ignore target. Use @loudbot ${action} #channel or @loudbot ${action} server.`,
+		`Invalid target. Use @loudbot ${action} #channel or @loudbot ${action} server.`,
 	);
 };
 
-const isIgnored = (message: MessageEvent): boolean => {
-	return db.isChannelIgnored(message.guild_id ?? '', message.channel_id);
+const isEnabled = (message: MessageEvent): boolean => {
+	return db.isChannelEnabled(message.guild_id ?? '', message.channel_id);
+};
+
+const isUserIgnored = (message: MessageEvent): boolean => {
+	if (!message.guild_id) return false;
+	return db.isUserIgnored(message.guild_id, message.author.id);
 };
 
 /**
@@ -266,7 +363,7 @@ export const handleMessageUpdate = async (
 	const content = message.content ?? '';
 	// Without the Message Content intent, edits arrive with content === "".
 	if (content === '' || !message.edited_timestamp) return;
-	if (isIgnored(message)) return;
+	if (!isEnabled(message)) return;
 
 	const existing = db.findByMessageId(message.id);
 
@@ -302,4 +399,34 @@ export const handleMessageDelete = (messageId: string): void => {
 	if (db.deleteByMessageId(messageId)) {
 		console.log(`Removed learned quote for deleted message ${messageId}`);
 	}
+};
+
+/**
+ * A ❌ reaction on one of the bot's quote replies deletes the reply
+ * message and the underlying quote from the corpus.
+ */
+export const handleReactionAdd = (
+	data: GatewayMessageReactionAddDispatchData,
+): void => {
+	// Only react to the bot's own messages.
+	if (data.message_author_id !== botUserId) return;
+	// Only the ❌ emoji.
+	const name = data.emoji.name;
+	if (!name || name !== '❌') return;
+
+	const quoteId = replyMessageToQuote.get(data.message_id);
+	// Other bot messages (help text, command acks) have no quote behind them,
+	// so most reactions on our own messages land here. Not worth logging.
+	if (!quoteId) return;
+
+	// Delete the quote from the corpus, then remove the reply message.
+	const deleted = db.deleteById(quoteId);
+	if (deleted) console.log(`Removed quote ${quoteId} after ❌ reaction`);
+	else console.log(`Reaction delete: quote ${quoteId} already gone`);
+
+	replyMessageToQuote.delete(data.message_id);
+
+	void rest.deleteMessage(data.channel_id, data.message_id).catch((error) => {
+		console.error(`Failed to delete reacted message ${data.message_id}:`, error);
+	});
 };

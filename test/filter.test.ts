@@ -30,4 +30,22 @@ describe('isLoud', () => {
 	test('all-caps with a lowercase word does not trigger', () => {
 		expect(isLoud('THIS IS LOUD with a whisper')).toBe(false);
 	});
+
+	test('emoji are tolerated (stripped): do not hurt a loud message', () => {
+		expect(isLoud('THIS IS AMAZING 🔥🔥')).toBe(true);
+		expect(isLoud('I LOVE THIS SO MUCH 🎉🎉🎉')).toBe(true);
+		expect(isLoud('🔥 THIS IS FINE 🔥')).toBe(true);
+	});
+
+	test('emoji do not rescue a non-loud message', () => {
+		expect(isLoud('amazing 🔥🔥')).toBe(false);
+		expect(isLoud('ok whatever 😀')).toBe(false);
+	});
+
+	test('too many emoji is not loud', () => {
+		expect(isLoud('🔥🔥🔥🔥🔥')).toBe(false);
+		expect(isLoud('🔁🔁🔁🔁🔁🔁🔁')).toBe(false);
+		// 4 emoji in a 10-char line = 0.4 ratio — over the 0.2 cap.
+		expect(isLoud('WOW 😀😀😀😀')).toBe(false);
+	});
 });

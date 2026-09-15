@@ -8,6 +8,7 @@ import type {
 	GatewayMessageCreateDispatchData,
 	GatewayMessageUpdateDispatchData,
 	GatewayMessageDeleteDispatchData,
+	GatewayMessageReactionAddDispatchData,
 	GatewayReceivePayload,
 } from 'discord-api-types/v10';
 import { config } from '../config.js';
@@ -15,6 +16,7 @@ import {
 	receiveMessage,
 	handleMessageUpdate,
 	handleMessageDelete,
+	handleReactionAdd,
 	setBotUser,
 } from '../handlers/loudbot.js';
 
@@ -26,9 +28,20 @@ let reconnectAttempts = 0;
 let botUserId: string | null = null;
 let isIntentionalClose = false;
 
+let gatewayReady = false;
+
+export function getGatewayState(): { connected: boolean; ready: boolean; botUserId: string | null } {
+	return {
+		connected: ws?.readyState === WebSocket.OPEN && !isIntentionalClose,
+		ready: gatewayReady,
+		botUserId,
+	};
+}
+
 const GATEWAY_INTENTS =
 	GatewayIntentBits.Guilds |
 	GatewayIntentBits.GuildMessages |
+	GatewayIntentBits.GuildMessageReactions |
 	GatewayIntentBits.MessageContent;
 
 export function connectGateway(): void {
@@ -54,6 +67,7 @@ export function connectGateway(): void {
 	ws.onclose = (event) => {
 		console.log(`Gateway closed: ${event.code} ${event.reason}`);
 		stopHeartbeat();
+		gatewayReady = false;
 		if (!isIntentionalClose) scheduleReconnect();
 	};
 
@@ -82,6 +96,7 @@ function handlePayload(payload: GatewayReceivePayload): void {
 					const ready = payload.d as GatewayReadyDispatchData;
 					sessionId = ready.session_id;
 					botUserId = ready.user.id;
+					gatewayReady = true;
 					setBotUser(botUserId);
 					console.log(`Ready: ${ready.user.username} (${botUserId})`);
 					break;
@@ -106,7 +121,16 @@ function handlePayload(payload: GatewayReceivePayload): void {
 					handleMessageDelete(data.id);
 					break;
 				}
+				case 'MESSAGE_REACTION_ADD': {
+					const data = payload.d as GatewayMessageReactionAddDispatchData;
+					handleReactionAdd(data);
+					break;
+				}
 				case 'RESUMED': {
+					// A resumed session is just as live as a fresh one. Without
+					// this, `gatewayReady` stays false after any reconnect that
+					// resumed (onclose cleared it), so /health would 503 forever.
+					gatewayReady = true;
 					console.log('Session resumed');
 					break;
 				}

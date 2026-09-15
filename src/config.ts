@@ -1,7 +1,7 @@
 interface Config {
 	discordAppId: string;
 	discordBotToken: string;
-	/** Path to the SQLite quote/ignore database file. */
+	/** Path to the SQLite quotes/allowlist/user-prefs database file. */
 	databasePath: string;
 }
 
